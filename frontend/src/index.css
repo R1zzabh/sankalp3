@@ -3,8 +3,14 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  
   body {
     @apply bg-dark-300 text-gray-100;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
@@ -23,5 +29,35 @@
 
   .btn-secondary {
     @apply bg-dark-100 hover:bg-dark-200 text-gray-100 border border-primary-800/30 transition-colors duration-200;
+  }
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .container {
+    @apply px-4;
+  }
+  
+  .card {
+    @apply p-4;
+  }
+  
+  /* Reduce motion on mobile */
+  @media (prefers-reduced-motion: no-preference) {
+    .animate-float {
+      animation: none;
+    }
+    
+    .hover-scale:hover {
+      transform: none;
+    }
+  }
+}
+
+/* Add touch feedback */
+@media (hover: none) {
+  .btn-primary:active,
+  .btn-secondary:active {
+    transform: scale(0.98);
   }
 }
