@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { LogOut, Settings, Users, BookOpen, CheckCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -13,59 +13,72 @@ export const AdminDashboard: React.FC = () => {
     getData();
   }, []);
 
-  const getData = async () => {
+  // Optimize data fetching with debouncing
+  const getData = useCallback(async () => {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
       const response = await fetch('http://localhost:5000/api/admin-check', {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        cache: 'no-store'
+        signal: controller.signal
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Fetch failed');
-      }
+      clearTimeout(timeoutId);
 
+      if (!response.ok) throw new Error('Fetch failed');
       const data = await response.json();
       setData(data.data);
-      console.log('Admin check response:', data);
     } catch (error) {
-      console.error('Fetch error:', error);
+      if (error.name === 'AbortError') {
+        console.log('Request timed out');
+      } else {
+        console.error('Fetch error:', error);
+      }
     }
-  };
+  }, []);
 
-  const approveUser = async (email) => {
+  // Optimistic UI update for approvals
+  const approveUser = useCallback(async (email: string) => {
+    // Update UI immediately
+    setData(prevData => 
+      prevData.map(item => 
+        item.Email === email ? { ...item, status: 1 } : item
+      )
+    );
+    
     try {
-      // Update UI immediately
-      setData(prevData => 
-        prevData.map(item => 
-          item.Email === email ? { ...item, status: 1 } : item
-        )
-      );
-      
-      // Send request to server
       const response = await fetch('http://localhost:5000/api/admin-approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value: 1, email }),
       });
-  
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Approval failed');
-        
+        // Revert on error
+        setData(prevData => 
+          prevData.map(item => 
+            item.Email === email ? { ...item, status: 0 } : item
+          )
+        );
+        throw new Error('Approval failed');
       }
     } catch (error) {
       console.error('Approve error:', error);
     }
-  };
-  
-  const courseStats = mockCourses.map(course => ({
-    id: course.id,
-    title: course.title,
-    enrolledStudents: Math.floor(Math.random() * 50) + 10,
-    pendingRequests: Math.floor(Math.random() * 8)
-  }));
+  }, []);
+
+  // Memoize course stats calculation
+  const courseStats = useMemo(() => 
+    mockCourses.map(course => ({
+      id: course.id,
+      title: course.title,
+      enrolledStudents: Math.floor(Math.random() * 50) + 10,
+      pendingRequests: Math.floor(Math.random() * 8)
+    })), 
+    []
+  );
 
   const containerVariants = {
     hidden: { opacity: 0 },

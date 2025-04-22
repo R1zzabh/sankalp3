@@ -1,17 +1,18 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, Suspense, lazy } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { CourseCard } from '../components/CourseCard';
-import { CourseDetails } from '../components/CourseDetails';
-import { ProfileSettings } from '../components/ProfileSettings';
-import { mockCourses } from '../data/mockData';
 import { LogOut, User, Settings } from 'lucide-react';
 import * as THREE from 'three';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
-// Optimized THREE.js configuration for better performance - same as login page
+// Lazy load components
+const CourseCard = lazy(() => import('../components/CourseCard'));
+const CourseDetails = lazy(() => import('../components/CourseDetails'));
+const ProfileSettings = lazy(() => import('../components/ProfileSettings'));
+
+// Optimized THREE.js configuration for better performance
 const setupThreeJS = (mountElement: HTMLDivElement) => {
   const isMobile = window.innerWidth < 768;
-  const particlesCount = isMobile ? 1500 : 3000;
+  const particlesCount = isMobile ? 1000 : 2000; // Reduced particle count
   
   const scene = new THREE.Scene();
   
@@ -71,15 +72,22 @@ const setupThreeJS = (mountElement: HTMLDivElement) => {
   window.addEventListener('resize', handleResize);
   
   let animationId: number;
-  const animate = () => {
-    particlesMesh.rotation.x += 0.0003;
-    particlesMesh.rotation.y += 0.0003;
+  let lastTime = 0;
+  const animate = (currentTime: number) => {
+    if (currentTime - lastTime < 16.67) { // Cap at ~60fps
+      animationId = requestAnimationFrame(animate);
+      return;
+    }
+    lastTime = currentTime;
+    
+    particlesMesh.rotation.x += 0.0002;
+    particlesMesh.rotation.y += 0.0002;
     
     renderer.render(scene, camera);
     animationId = requestAnimationFrame(animate);
   };
-  
-  animate();
+
+  animate(0);
   
   return () => {
     window.removeEventListener('resize', handleResize);
@@ -92,6 +100,17 @@ const setupThreeJS = (mountElement: HTMLDivElement) => {
     renderer.dispose();
   };
 };
+
+// Loading fallback component
+const LoadingFallback = () => (
+  <div className="flex items-center justify-center p-4">
+    <motion.div
+      className="w-6 h-6 border-2 border-primary-400 rounded-full"
+      animate={{ rotate: 360 }}
+      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+    />
+  </div>
+);
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -130,9 +149,15 @@ export const StudentDashboard: React.FC = () => {
     };
   }, []);
 
-  const handleProfileUpdate = (userData: Partial<User>) => {
-    console.log('Updating user data:', userData);
-    setShowSettings(false);
+  const handleProfileUpdate = async (userData: Partial<User>) => {
+    setShowSettings(false); // Update UI immediately
+    try {
+      // API call here
+      console.log('Updating user data:', userData);
+    } catch (error) {
+      console.error('Update failed:', error);
+      setShowSettings(true); // Revert on error
+    }
   };
 
   const course = selectedCourse ? mockCourses.find(c => c.id === selectedCourse) : null;
@@ -193,53 +218,58 @@ export const StudentDashboard: React.FC = () => {
       </nav>
 
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-        >
-          {showSettings ? (
-            <motion.div variants={itemVariants} className="card p-6">
-              <ProfileSettings
-                user={user!}
-                onSave={handleProfileUpdate}
-                onClose={() => setShowSettings(false)}
-              />
-            </motion.div>
-          ) : course ? (
-            <motion.div variants={itemVariants} className="card p-6">
-              <CourseDetails
-                course={course}
-                onBack={() => changeView(null)}
-                email={user?.email}
-                name={user?.name}
-              />
-            </motion.div>
-          ) : (
-            <>
-              <motion.h2 
-                variants={itemVariants}
-                className="text-xl font-bold text-primary-400 mb-6"
-              >
-                Available Courses
-              </motion.h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {mockCourses.map((course, index) => (
-                  <motion.div
-                    key={course.id}
+        <AnimatePresence mode="wait">
+          <Suspense fallback={<LoadingFallback />}>
+            <motion.div
+              variants={containerVariants}
+              initial="hidden"
+              animate="visible"
+              exit="hidden"
+            >
+              {showSettings ? (
+                <motion.div variants={itemVariants} className="card p-6">
+                  <ProfileSettings
+                    user={user!}
+                    onSave={handleProfileUpdate}
+                    onClose={() => setShowSettings(false)}
+                  />
+                </motion.div>
+              ) : course ? (
+                <motion.div variants={itemVariants} className="card p-6">
+                  <CourseDetails
+                    course={course}
+                    onBack={() => changeView(null)}
+                    email={user?.email}
+                    name={user?.name}
+                  />
+                </motion.div>
+              ) : (
+                <>
+                  <motion.h2 
                     variants={itemVariants}
-                    className="bg-dark-100 rounded-lg p-4 border border-primary-800/20"
+                    className="text-xl font-bold text-primary-400 mb-6"
                   >
-                    <CourseCard
-                      course={course}
-                      onClick={() => changeView(course.id)}
-                    />
-                  </motion.div>
-                ))}
-              </div>
-            </>
-          )}
-        </motion.div>
+                    Available Courses
+                  </motion.h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {mockCourses.map((course, index) => (
+                      <motion.div
+                        key={course.id}
+                        variants={itemVariants}
+                        className="bg-dark-100 rounded-lg p-4 border border-primary-800/20"
+                      >
+                        <CourseCard
+                          course={course}
+                          onClick={() => changeView(course.id)}
+                        />
+                      </motion.div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </Suspense>
+        </AnimatePresence>
       </main>
     </div>
   );
